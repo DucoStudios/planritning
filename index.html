@@ -120,6 +120,21 @@ table.areas tr.sub td{color:var(--muted);border-bottom:0}
 .palette .chip:hover{border-color:var(--ink)}
 .order{display:grid;grid-template-columns:repeat(4,1fr);gap:5px}
 .order .btn{padding:5px 4px;font-size:12px}
+.order.two{grid-template-columns:1fr 1fr}
+.layers{display:flex;flex-direction:column;gap:5px}
+.layer{display:grid;grid-template-columns:22px 1fr auto 28px 28px 24px;align-items:center;gap:4px;border:2px solid var(--line);border-radius:12px;padding:3px 4px 3px 6px;background:var(--paper)}
+.layer.on{border-color:var(--accent);background:var(--accent-soft)}
+.layer.off .lname{opacity:.45;text-decoration:line-through}
+.layer input.lname{border:0;background:transparent;padding:3px 4px;border-radius:6px;font-weight:700;min-width:0;width:100%}
+.layer input.lname:focus{background:var(--paper);box-shadow:0 0 0 2px var(--accent-soft)}
+.layer .cnt{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;padding:0 2px}
+.layer button{border:0;background:transparent;cursor:pointer;padding:3px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--ink)}
+.layer button:hover{background:rgba(43,42,36,.07)}
+.layer button svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.layer button.dim{color:#b3ad9c}
+.layer .dot{width:14px;height:14px;border-radius:50%;border:2px solid var(--muted);padding:0}
+.layer.on .dot{border-color:var(--accent);background:radial-gradient(circle,var(--accent) 45%,transparent 50%)}
+.grouptag{display:inline-block;background:var(--yellow);color:#3a2e05;border-radius:2px;transform:rotate(-2deg);padding:1px 7px;font-size:11px;font-weight:700;box-shadow:0 1px 3px rgba(0,0,0,.12)}
 #view3d{position:absolute;inset:0;background:#efe9dc;display:flex;flex-direction:column;z-index:4}
 #view3d[hidden]{display:none!important}
 #bar3d{height:44px;display:flex;align-items:center;gap:10px;padding:0 14px;background:var(--chrome);border-bottom:2px solid var(--line);white-space:nowrap;overflow-x:auto;flex:none}
@@ -287,6 +302,7 @@ const LIB = {
   shower: { name: 'Dusch', w: 900, d: 900, h: 30, cat: 'Bad', col: 0xc6d4dc },
   bath: { name: 'Badkar', w: 1700, d: 750, h: 550, cat: 'Bad', col: 0xffffff },
   washer: { name: 'Tvättmaskin', w: 600, d: 600, h: 850, cat: 'Bad', col: 0xeeeeee },
+  hammock: { name: 'Hängmatta', w: 3200, d: 1100, h: 950, cat: 'Utomhus', col: 0xd9c7a3 },
   stairs: { name: 'Trappa', w: 1000, d: 3000, h: 0, cat: 'Övrigt', col: 0xb88d5f },
   rect: { name: 'Rektangel', w: 1000, d: 600, h: 700, cat: 'Övrigt', col: 0xcfc8bb },
   circle: { name: 'Cirkel', w: 800, d: 800, h: 700, cat: 'Övrigt', col: 0xcfc8bb },
@@ -296,6 +312,53 @@ const LIB = {
 const PALETTE = ['#ffffff', '#f3efe6', '#e8dcc8', '#d9c3a5', '#c4a27c', '#b58c5e', '#8a6a4a', '#5b4636', '#2b2a24',
   '#e4e6e1', '#c9d3cf', '#a9bba9', '#7d9a85', '#56705e', '#dbe9f5', '#a7c1d9', '#6f8fae', '#2f4b6b',
   '#fdf3cf', '#f4c94f', '#e9b38a', '#d98b6a', '#e0603c', '#b5562f', '#d8b4b8', '#a5727a', '#6b3f4a'];
+// Fria objekt (möbler, texter, måttlinjer) kan grupperas och läggas i lager. Väggar, öppningar och rum hör till byggnaden.
+const FREE = { furn: 'furn', text: 'texts', dim: 'dims' };
+const objOf = (f, kind, id) => FREE[kind] ? (f[FREE[kind]] || []).find(o => o.id === id) || null : null;
+function ensureLayers(d) {
+  if (!Array.isArray(d.layers) || !d.layers.length) d.layers = [{ id: 'base', name: 'Lager 1', visible: true, locked: false }];
+  if (!d.layers.some(l => l.id === d.activeLayer)) d.activeLayer = d.layers[0].id;
+  return d;
+}
+const layerOf = o => P.layers.find(l => l.id === (o.layer || 'base')) || P.layers[0];
+const isVis = o => { const l = layerOf(o); return !l || l.visible !== false; };
+const isHit = o => { const l = layerOf(o); return !l || (l.visible !== false && !l.locked); };
+// Nytt objekt hamnar i det aktiva lagret.
+function inLayer(o) {
+  o.layer = P.activeLayer; const l = layerOf(o);
+  if (l && (l.visible === false || l.locked)) toast(`Lagret "${l.name}" är ${l.visible === false ? 'dolt' : 'låst'}. Välj ett annat aktivt lager för att se det du lägger till.`);
+  return o;
+}
+const isSelected = (kind, id) => !!sel && ((sel.kind === kind && sel.id === id) || (sel.kind === 'multi' && sel.items.some(i => i.kind === kind && i.id === id)));
+const centerOf = (kind, o) => kind === 'dim' ? { x: (o.x1 + o.x2) / 2, y: (o.y1 + o.y2) / 2 } : { x: o.x, y: o.y };
+function freeItems(f) { const out = []; for (const k of Object.keys(FREE)) for (const o of f[FREE[k]] || []) out.push({ kind: k, id: o.id, o }); return out; }
+const groupItems = (f, g) => freeItems(f).filter(x => x.o.g === g).map(({ kind, id }) => ({ kind, id }));
+function expandGroups(f, items) {
+  const out = [], seen = new Set();
+  for (const it of items) { const o = objOf(f, it.kind, it.id); if (!o) continue; for (const x of o.g ? groupItems(f, o.g) : [it]) { const k = x.kind + ':' + x.id; if (!seen.has(k)) { seen.add(k); out.push(x); } } }
+  return out;
+}
+function selectItems(items) {
+  const f = F(); items = expandGroups(f, items);
+  if (!items.length) { select(null); return; }
+  if (items.length === 1 && !objOf(f, items[0].kind, items[0].id).g) { select(items[0]); return; }
+  const gs = new Set(items.map(i => objOf(f, i.kind, i.id).g));
+  const g = gs.size === 1 && [...gs][0] && groupItems(f, [...gs][0]).length === items.length ? [...gs][0] : null;
+  select({ kind: 'multi', items, g });
+}
+const multiObjs = () => sel && sel.kind === 'multi' ? sel.items.map(i => ({ ...i, o: objOf(F(), i.kind, i.id) })).filter(x => x.o) : [];
+// Markerade fria objekt, oavsett om det är ett eller flera.
+const selObjs = () => !sel ? [] : sel.kind === 'multi' ? multiObjs() : FREE[sel.kind] && findSel() ? [{ kind: sel.kind, id: sel.id, o: findSel() }] : [];
+function bboxOf(xs) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  const inc = (x, y) => { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); };
+  for (const { kind, o } of xs) {
+    if (kind === 'furn') { const a = (o.rot || 0) * Math.PI / 180, ex = Math.abs(Math.cos(a)) * o.w / 2 + Math.abs(Math.sin(a)) * o.d / 2, ey = Math.abs(Math.sin(a)) * o.w / 2 + Math.abs(Math.cos(a)) * o.d / 2; inc(o.x - ex, o.y - ey); inc(o.x + ex, o.y + ey); }
+    else if (kind === 'dim') { inc(o.x1, o.y1); inc(o.x2, o.y2); }
+    else { const sz = o.size || 250, hw = sz * (o.text || '').length * 0.3; inc(o.x - hw, o.y - sz * 0.6); inc(o.x + hw, o.y + sz * 0.6); }
+  }
+  return isFinite(x0) ? { x0, y0, x1, y1 } : null;
+}
 // Mörka fyllningar får ljus text och ljusa linjer så att namn och detaljer syns.
 function isDark(hex) { if (!hex || hex[0] !== '#' || hex.length < 7) return false; const n = parseInt(hex.slice(1, 7), 16); return (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) < 128; }
 const OPEN_TYPES = { door: 'Dörr', double: 'Pardörr', slide: 'Skjutdörr', open: 'Öppning', window: 'Fönster' };
@@ -343,7 +406,7 @@ function sampleProject() {
   M(f2, 'sofa', 7800, 1800, 180); M(f2, 'coffee', 7800, 850); M(f2, 'desk', 9250, 4500, 180, { w: 1200 });
   M(f2, 'bath', 5520, 7450); M(f2, 'toilet', 7115, 6000, 90); M(f2, 'sink', 4785, 6000, 270);
   M(f2, 'wardrobe', 9550, 6500, 90, { w: 2400 });
-  return { v: 1, name: 'Exempelhus (ändra fritt)', floors: [f1, f2] };
+  return ensureLayers({ v: 1, name: 'Exempelhus (ändra fritt)', floors: [f1, f2] });
 }
 
 let P = null, cur = 0, sel = null, tool = 'select';
@@ -363,7 +426,7 @@ function commit() {
 }
 function undo() { if (!undoStack.length) return; redoStack.push(lastSnap); lastSnap = undoStack.pop(); P = JSON.parse(lastSnap); afterLoad(); }
 function redo() { if (!redoStack.length) return; undoStack.push(lastSnap); lastSnap = redoStack.pop(); P = JSON.parse(lastSnap); afterLoad(); }
-function afterLoad() { cur = clamp(cur, 0, P.floors.length - 1); sel = null; changed(); renderAll(); }
+function afterLoad() { ensureLayers(P); cur = clamp(cur, 0, P.floors.length - 1); sel = null; changed(); renderAll(); }
 let saveT = 0;
 function changed() {
   VER++;
@@ -558,6 +621,23 @@ function drawFurn(c, it, px, selected) {
     case 'bath': R(-hw, -hd, w, d); RR(-hw + 70, -hd + 70, w - 140, d - 140, 220); E(hw - 250, 0, 35, 35); break;
     case 'washer': R(-hw, -hd, w, d); E(0, 20, Math.min(w, d) * 0.32, Math.min(w, d) * 0.32); break;
     case 'wardrobe': R(-hw, -hd, w, d); L(-hw, 0, hw, 0); for (let x = -hw + 120; x < hw - 60; x += 160) L(x - 50, -70, x + 50, 70); break;
+    case 'hammock': {
+      // Sett uppifrån: ställningens fötter och mittbalk, linor till spridarpinnarna och en svängd duk med nät.
+      const ft = Math.min(90, w * 0.03), sx = hw * 0.6, sy = hd * 0.5;
+      c.save(); c.fillStyle = dark ? it.color : '#fff';
+      R(-hw, -hd * 0.95, ft, d * 0.95);
+      R(hw - ft, -hd * 0.95, ft, d * 0.95);
+      R(-hw + ft, -30, w - 2 * ft, 60);
+      c.restore();
+      L(-hw + ft / 2, 0, -sx, -sy); L(-hw + ft / 2, 0, -sx, sy); L(-hw + ft / 2, 0, -sx, 0);
+      L(hw - ft / 2, 0, sx, -sy); L(hw - ft / 2, 0, sx, sy); L(hw - ft / 2, 0, sx, 0);
+      c.beginPath(); c.moveTo(-sx, -sy); c.quadraticCurveTo(0, -hd * 1.05, sx, -sy); c.lineTo(sx, sy); c.quadraticCurveTo(0, hd * 1.05, -sx, sy); c.closePath(); c.fill(); c.stroke();
+      c.save(); c.lineWidth = px * 0.7; c.setLineDash([px * 3, px * 3]);
+      for (const k2 of [-0.5, 0, 0.5]) { c.beginPath(); c.moveTo(-sx, sy * k2); c.quadraticCurveTo(0, sy * k2 * 1.6, sx, sy * k2); c.stroke(); }
+      c.restore();
+      c.lineWidth = px * 2.4; L(-sx, -sy, -sx, sy); L(sx, -sy, sx, sy);
+      break;
+    }
     case 'stairs': {
       R(-hw, -hd, w, d); const n = Math.max(2, Math.round(d / 250));
       for (let i = 1; i < n; i++) L(-hw, -hd + i * d / n, hw, -hd + i * d / n);
@@ -640,7 +720,7 @@ function drawFloor(c, f, vw, o = {}) {
     if (r && r.rec.color) { c.strokeStyle = ACC; c.lineWidth = px * 2; c.setLineDash([px * 6, px * 4]); poly4(c, r.net); c.stroke(); c.setLineDash([]); }
   }
   // möbler under väggar, i listans ordning: sist i listan ligger överst
-  for (const it of f.furn) drawFurn(c, it, px, !o.export && sel && sel.kind === 'furn' && sel.id === it.id);
+  for (const it of f.furn) if (isVis(it)) drawFurn(c, it, px, !o.export && isSelected('furn', it.id));
   // väggar
   for (const w of f.walls) {
     const { I, solids } = wallParts(f, w);
@@ -673,8 +753,9 @@ function drawFloor(c, f, vw, o = {}) {
   }
   // egna måttlinjer
   for (const d of f.dims) {
+    if (!isVis(d)) continue;
     const a = { x: d.x1, y: d.y1 }, b = { x: d.x2, y: d.y2 }, u = norm(sub(b, a)), n = { x: -u.y, y: u.x };
-    const isSel = !o.export && sel && sel.kind === 'dim' && sel.id === d.id;
+    const isSel = !o.export && isSelected('dim', d.id);
     c.save(); if (isSel) { c.globalAlpha = 1; }
     drawDimLine(c, a, b, d.off || 0.001, n, px, fmtMM(dist(a, b)).replace(/\s/g, ''), 170);
     if (isSel) { c.strokeStyle = ACC; c.lineWidth = px * 2; c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke(); }
@@ -682,7 +763,8 @@ function drawFloor(c, f, vw, o = {}) {
   }
   // texter
   for (const t of f.texts) {
-    const isSel = !o.export && sel && sel.kind === 'text' && sel.id === t.id;
+    if (!isVis(t)) continue;
+    const isSel = !o.export && isSelected('text', t.id);
     c.fillStyle = isSel ? ACC : INK; c.font = `${t.size || 250}px ${HAND}`; c.textAlign = 'center'; c.textBaseline = 'middle';
     c.fillText(t.text, t.x, t.y);
   }
@@ -724,6 +806,10 @@ function draw() {
   if (sel && sel.kind === 'text') {
     const t = F().texts.find(x => x.id === sel.id);
     if (t) { c.font = `${t.size || 250}px ${HAND}`; const m = c.measureText(t.text).width; c.strokeStyle = ACC; c.lineWidth = px; c.setLineDash([px * 4, px * 3]); c.strokeRect(t.x - m / 2 - 60, t.y - (t.size || 250) * 0.7, m + 120, (t.size || 250) * 1.4); c.setLineDash([]); }
+  }
+  if (sel && sel.kind === 'multi') {
+    const bb = bboxOf(multiObjs());
+    if (bb) { const m = 120; c.strokeStyle = sel.g ? '#e0603c' : ACC; c.lineWidth = px * 1.6; c.setLineDash([px * 7, px * 4]); c.strokeRect(bb.x0 - m, bb.y0 - m, bb.x1 - bb.x0 + 2 * m, bb.y1 - bb.y0 + 2 * m); c.setLineDash([]); }
   }
   T[tool].draw && T[tool].draw(c, px);
   // fäst-indikator
@@ -788,7 +874,7 @@ function hitFurn(f, p) {
   for (let i = f.furn.length - 1; i >= 0; i--) {
     const it = f.furn[i], a = -(it.rot || 0) * Math.PI / 180, d = sub(p, it);
     const lx = d.x * Math.cos(a) - d.y * Math.sin(a), ly = d.x * Math.sin(a) + d.y * Math.cos(a);
-    if (Math.abs(lx) <= it.w / 2 && Math.abs(ly) <= it.d / 2) return it;
+    if (isHit(it) && Math.abs(lx) <= it.w / 2 && Math.abs(ly) <= it.d / 2) return it;
   }
   return null;
 }
@@ -799,11 +885,11 @@ function hitTest(p) {
     const I = wInfo(w), t = segT(p, I.a, I.b) * I.L, off = Math.abs(dot(sub(p, I.a), I.n));
     if (Math.abs(t - o.pos) <= o.w / 2 && off <= w.t / 2 + tol) return { kind: 'opening', id: o.id };
   }
-  for (const t of f.texts) { const sz = t.size || 250; if (Math.abs(p.x - t.x) < sz * t.text.length * 0.3 + tol && Math.abs(p.y - t.y) < sz * 0.6) return { kind: 'text', id: t.id }; }
+  for (const t of f.texts) { const sz = t.size || 250; if (isHit(t) && Math.abs(p.x - t.x) < sz * t.text.length * 0.3 + tol && Math.abs(p.y - t.y) < sz * 0.6) return { kind: 'text', id: t.id }; }
   const fc = computeFaces(f);
   for (const r of fc.rooms) if (r.rec && dist(p, r.lp) < Math.max(350, 30 / view.s) && dist(p, r.lp) < 900) return { kind: 'roomlabel', id: r.rec.id };
   for (const w of f.walls) if (distSeg(p, wA(w), wB(w)) <= Math.max(w.t / 2, tol)) return { kind: 'wall', id: w.id };
-  for (const d of f.dims) if (distSeg(p, { x: d.x1, y: d.y1 }, { x: d.x2, y: d.y2 }) <= tol) return { kind: 'dim', id: d.id };
+  for (const d of f.dims) if (isHit(d) && distSeg(p, { x: d.x1, y: d.y1 }, { x: d.x2, y: d.y2 }) <= tol) return { kind: 'dim', id: d.id };
   const it = hitFurn(f, p); if (it) return { kind: 'furn', id: it.id };
   for (const r of fc.rooms) if (inPoly(p, r.poly)) return { kind: 'roomface', room: r };
   return null;
@@ -822,6 +908,7 @@ function findSel() {
 function select(s) { sel = s; renderPanel(); draw(); }
 function deleteSel() {
   if (!sel) return; const f = F();
+  if (sel.kind === 'multi') { const ids = new Set(sel.items.map(i => i.id)); for (const k of Object.values(FREE)) f[k] = f[k].filter(o => !ids.has(o.id)); sel = null; commit(); return; }
   if (sel.kind === 'wall') { f.walls = f.walls.filter(w => w.id !== sel.id); f.openings = f.openings.filter(o => o.wall !== sel.id); }
   else if (sel.kind === 'opening') f.openings = f.openings.filter(o => o.id !== sel.id);
   else if (sel.kind === 'furn') f.furn = f.furn.filter(o => o.id !== sel.id);
@@ -884,7 +971,7 @@ function liveLabel(c, p, txt, px, n, t) {
 
 const T = {};
 T.select = {
-  hint: 'Klicka för att markera. Dra för att flytta. Dra i tomt område för att panorera. Delete tar bort, R vrider möbel 90°.',
+  hint: 'Klicka för att markera, dra för att flytta. Shift-klick eller Shift-dra markerar flera, Cmd/Ctrl+G grupperar. Dra i tomt område panorerar. Delete tar bort, R vrider 90°.',
   down(p, e) {
     const f = F();
     // ändpunktshandtag för vald vägg
@@ -896,7 +983,23 @@ T.select = {
       }
     }
     const h = hitTest(p);
+    const free = h && FREE[h.kind];
+    if (e.shiftKey) {
+      // Shift-dra från allt som inte är en möbel/text/måtta (tomt, rum, vägg) ritar en markeringsruta.
+      if (!free) { drag = { kind: 'marquee', a: p, b: p, moved: false, hit: h }; return; }
+      {
+        const cur = sel && sel.kind === 'multi' ? sel.items : sel && FREE[sel.kind] ? [{ kind: sel.kind, id: sel.id }] : [];
+        const mine = expandGroups(f, [{ kind: h.kind, id: h.id }]), has = cur.some(i => i.kind === h.kind && i.id === h.id);
+        selectItems(has ? cur.filter(i => !mine.some(m => m.kind === i.kind && m.id === i.id)) : cur.concat(mine));
+        return;
+      }
+    }
     if (!h) { select(null); pan = { sx: mouse.x, sy: mouse.y, vx: view.x, vy: view.y }; return; }
+    if (free) {
+      const o = objOf(f, h.kind, h.id), mod = e.metaKey || e.ctrlKey;
+      if (isSelected(h.kind, h.id) && sel.kind === 'multi' && !mod) { this.multiDrag(p); return; }
+      if (o.g && !mod) { selectItems([{ kind: h.kind, id: h.id }]); this.multiDrag(p); return; }
+    }
     if (h.kind === 'roomface') { const rec = ensureRoomRec(h.room); lastSnap = snapshot(); select({ kind: 'room', id: rec.id }); return; }
     if (h.kind === 'roomlabel') { select({ kind: 'room', id: h.id }); const r = f.rooms.find(x => x.id === h.id); drag = { kind: 'pt', obj: r, start: p, ox: r.x, oy: r.y, moved: false }; return; }
     select({ kind: h.kind, id: h.id });
@@ -905,10 +1008,17 @@ T.select = {
     else if (h.kind === 'opening') drag = { kind: 'opening', o, moved: false };
     else if (h.kind === 'furn' || h.kind === 'text') drag = { kind: 'pt', obj: o, start: p, ox: o.x, oy: o.y, moved: false };
   },
+  multiDrag(p) { drag = { kind: 'multi', start: p, moved: false, orig: multiObjs().map(({ o }) => ({ o, x: o.x, y: o.y, x1: o.x1, y1: o.y1, x2: o.x2, y2: o.y2 })) }; },
   move(p, e) {
     if (!drag) { const h = hitTest(p); cv.className = h ? 'sel' : 'pan'; return; }
     const f = F(), g = opts.snap && !e.altKey ? opts.grid : 1;
     drag.moved = true;
+    if (drag.kind === 'marquee') { drag.b = p; draw(); return; }
+    if (drag.kind === 'multi') {
+      const gg = opts.snap && !e.altKey ? 10 : 1, dx = Math.round((p.x - drag.start.x) / gg) * gg, dy = Math.round((p.y - drag.start.y) / gg) * gg;
+      for (const r of drag.orig) { if (r.x1 !== undefined) { r.o.x1 = r.x1 + dx; r.o.y1 = r.y1 + dy; r.o.x2 = r.x2 + dx; r.o.y2 = r.y2 + dy; } else { r.o.x = r.x + dx; r.o.y = r.y + dy; } }
+      VER++; draw(); return;
+    }
     if (drag.kind === 'pt') {
       const gg = drag.obj.kind ? (opts.snap && !e.altKey ? 10 : 1) : g;
       drag.obj.x = Math.round((drag.ox + p.x - drag.start.x) / gg) * gg; drag.obj.y = Math.round((drag.oy + p.y - drag.start.y) / gg) * gg;
@@ -929,7 +1039,26 @@ T.select = {
     }
     VER++; draw(); updateLive();
   },
-  up() { if (drag && drag.moved) commit(); drag = null; snapInfo = null; draw(); },
+  up() {
+    if (drag && drag.kind === 'marquee') {
+      const d = drag; drag = null;
+      if (dist(d.a, d.b) * view.s < 4) { // ett vanligt klick med Shift: markera det som träffades
+        const h = d.hit; if (!h) select(null); else if (h.kind === 'roomface') { const rec = ensureRoomRec(h.room); lastSnap = snapshot(); select({ kind: 'room', id: rec.id }); } else select(h.kind === 'roomlabel' ? { kind: 'room', id: h.id } : { kind: h.kind, id: h.id });
+        return;
+      }
+      const x0 = Math.min(d.a.x, d.b.x), x1 = Math.max(d.a.x, d.b.x), y0 = Math.min(d.a.y, d.b.y), y1 = Math.max(d.a.y, d.b.y);
+      const hits = freeItems(F()).filter(({ kind, o }) => { if (!isHit(o)) return false; const c = centerOf(kind, o); return c.x >= x0 && c.x <= x1 && c.y >= y0 && c.y <= y1; }).map(({ kind, id }) => ({ kind, id }));
+      const cur = sel && sel.kind === 'multi' ? sel.items : sel && FREE[sel.kind] ? [{ kind: sel.kind, id: sel.id }] : [];
+      selectItems(cur.concat(hits)); return;
+    }
+    if (drag && drag.moved) commit(); drag = null; snapInfo = null; draw();
+  },
+  draw(c, px) {
+    if (!drag || drag.kind !== 'marquee') return;
+    const a = drag.a, b = drag.b;
+    c.fillStyle = 'rgba(47,111,176,0.08)'; c.fillRect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(b.x - a.x), Math.abs(b.y - a.y));
+    c.strokeStyle = ACC; c.lineWidth = px; c.setLineDash([px * 5, px * 4]); c.strokeRect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(b.x - a.x), Math.abs(b.y - a.y)); c.setLineDash([]);
+  },
 };
 T.wall = {
   hint: 'Klicka för start, klicka för varje hörn. Skriv en längd (t.ex. 4200 eller 4,2) och tryck Enter. Shift = fri vinkel, Alt = ingen fästning. Esc eller högerklick avslutar.',
@@ -1017,7 +1146,7 @@ T.furn = {
   rot: 0,
   down(p, e) {
     const k = LIB[opts.furnKind], g = opts.snap && !e.altKey ? 50 : 1;
-    const it = { id: uid(), kind: opts.furnKind, x: Math.round(p.x / g) * g, y: Math.round(p.y / g) * g, w: k.w, d: k.d, h: k.h, rot: this.rot, label: k.name };
+    const it = inLayer({ id: uid(), kind: opts.furnKind, x: Math.round(p.x / g) * g, y: Math.round(p.y / g) * g, w: k.w, d: k.d, h: k.h, rot: this.rot, label: k.name });
     F().furn.push(it); commit(); select({ kind: 'furn', id: it.id });
   },
   move(p) { draw(); },
@@ -1046,7 +1175,7 @@ T.shape = {
     for (const p of pts) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
     const w = Math.max(x1 - x0, 10), d = Math.max(y1 - y0, 10), cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
     const it = { id: uid(), kind: 'custom', x: Math.round(cx), y: Math.round(cy), w: Math.round(w), d: Math.round(d), h: 700, rot: 0, label: 'Egen form', pts: pts.map(p => ({ x: (p.x - cx) / w, y: (p.y - cy) / d })) };
-    F().furn.push(it); commit(); setTool('select'); select({ kind: 'furn', id: it.id });
+    F().furn.push(inLayer(it)); commit(); setTool('select'); select({ kind: 'furn', id: it.id });
   },
   cancel() { this.pts = []; draw(); },
   typed() { if (this.pts.length >= 3) { this.finish(); return true; } return false; },
@@ -1066,7 +1195,7 @@ T.measure = {
   down(p, e) {
     const s = snapPoint(p, this.start, e).p;
     if (!this.start) { this.start = s; return; }
-    if (dist(s, this.start) > 10) { const d = { id: uid(), x1: this.start.x, y1: this.start.y, x2: s.x, y2: s.y, off: 0 }; F().dims.push(d); commit(); }
+    if (dist(s, this.start) > 10) { const d = { id: uid(), x1: this.start.x, y1: this.start.y, x2: s.x, y2: s.y, off: 0 }; F().dims.push(inLayer(d)); commit(); }
     this.start = null;
   },
   move(p, e) { snapInfo = snapPoint(p, this.start, e); draw(); },
@@ -1080,7 +1209,7 @@ T.measure = {
 };
 T.text = {
   hint: 'Klicka där texten ska stå. Skriv in texten i panelen.',
-  down(p) { const t = { id: uid(), x: Math.round(p.x), y: Math.round(p.y), text: 'Text', size: 250 }; F().texts.push(t); commit(); setTool('select'); select({ kind: 'text', id: t.id }); setTimeout(() => { const i = $('#p_text'); if (i) { i.focus(); i.select(); } }, 0); },
+  down(p) { const t = { id: uid(), x: Math.round(p.x), y: Math.round(p.y), text: 'Text', size: 250 }; F().texts.push(inLayer(t)); commit(); setTool('select'); select({ kind: 'text', id: t.id }); setTimeout(() => { const i = $('#p_text'); if (i) { i.focus(); i.select(); } }, 0); },
   move() { draw(); },
 };
 
@@ -1210,6 +1339,7 @@ window.addEventListener('keydown', e => {
   if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
   if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
   if (mod && e.key.toLowerCase() === 'd') { e.preventDefault(); duplicateSel(); return; }
+  if (mod && e.key.toLowerCase() === 'g') { e.preventDefault(); e.shiftKey ? ungroupSel() : groupSel(); return; }
   if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); saveFile(); return; }
   if (e.key === ' ') { spaceDown = true; cv.className = 'pan'; e.preventDefault(); return; }
   if (e.key === 'Escape') { if (T[tool].cancel) T[tool].cancel(); if (tool !== 'select') setTool('select'); else select(null); return; }
@@ -1221,16 +1351,60 @@ window.addEventListener('keydown', e => {
   if (k === 'r') {
     if (tool === 'furn') { T.furn.rot = (T.furn.rot + 90) % 360; draw(); return; }
     if (sel && sel.kind === 'furn') { const it = findSel(); it.rot = ((it.rot || 0) + 90) % 360; commit(); return; }
+    if (sel && sel.kind === 'multi') { rotateMulti(); return; }
   }
   if (sel && sel.kind === 'furn' && (k === 'ö' || k === 'ä')) { moveFurn(findSel(), k === 'ö' ? (e.shiftKey ? 'toBack' : 'toFront') : (e.shiftKey ? 'up' : 'down')); commit(); return; }
+  if (sel && sel.kind === 'multi' && k === 'ö') { orderMulti(e.shiftKey ? 'toBack' : 'toFront'); return; }
   const map = { v: 'select', w: 'wall', e: 'rect', d: 'door', f: 'window', m: 'furn', p: 'shape', a: 'measure', t: 'text' };
   if (map[k]) setTool(map[k]);
 });
 window.addEventListener('keyup', e => { if (e.key === ' ') { spaceDown = false; cv.className = tool === 'select' ? 'sel' : ''; } });
 
 function duplicateSel() {
-  const o = findSel(); if (!o || !sel) return; const f = F();
-  if (sel.kind === 'furn') { const c = { ...JSON.parse(JSON.stringify(o)), id: uid(), x: o.x + 300, y: o.y + 300 }; f.furn.push(c); commit(); select({ kind: 'furn', id: c.id }); }
+  if (!sel) return; const f = F();
+  if (sel.kind === 'multi') {
+    const gmap = {}, out = [];
+    for (const { kind, o } of multiObjs()) {
+      const c = { ...JSON.parse(JSON.stringify(o)), id: uid() };
+      if (kind === 'dim') { c.x1 += 300; c.y1 += 300; c.x2 += 300; c.y2 += 300; } else { c.x += 300; c.y += 300; }
+      if (c.g) c.g = gmap[c.g] || (gmap[c.g] = uid());
+      f[FREE[kind]].push(c); out.push({ kind, id: c.id });
+    }
+    commit(); selectItems(out); return;
+  }
+  const o = findSel(); if (!o) return;
+  if (FREE[sel.kind]) {
+    const c = { ...JSON.parse(JSON.stringify(o)), id: uid() }; delete c.g;
+    if (sel.kind === 'dim') { c.x1 += 300; c.y1 += 300; c.x2 += 300; c.y2 += 300; } else { c.x += 300; c.y += 300; }
+    f[FREE[sel.kind]].push(c); commit(); select({ kind: sel.kind, id: c.id });
+  }
+}
+function groupSel() {
+  const xs = multiObjs(); if (xs.length < 2) { toast('Markera minst två saker (Shift-klick eller Shift-dra) för att gruppera'); return; }
+  const g = uid(); for (const { o } of xs) o.g = g;
+  commit(); selectItems(xs.map(({ kind, id }) => ({ kind, id }))); toast('Grupperat. Cmd/Ctrl-klick markerar en enskild sak i gruppen.');
+}
+function ungroupSel() {
+  const xs = selObjs(); if (!xs.some(x => x.o.g)) return;
+  const gs = new Set(xs.map(x => x.o.g).filter(Boolean)), f = F();
+  for (const x of freeItems(f)) if (gs.has(x.o.g)) delete x.o.g;
+  commit(); if (sel && sel.kind === 'multi') select({ kind: 'multi', items: sel.items, g: null });
+}
+// Vrider markeringen 90° medurs runt sin mittpunkt.
+function rotateMulti() {
+  const xs = multiObjs(), bb = bboxOf(xs); if (!bb) return;
+  const cx = (bb.x0 + bb.x1) / 2, cy = (bb.y0 + bb.y1) / 2, r = (x, y) => ({ x: Math.round(cx - (y - cy)), y: Math.round(cy + (x - cx)) });
+  for (const { kind, o } of xs) {
+    if (kind === 'dim') { const a = r(o.x1, o.y1), b = r(o.x2, o.y2); Object.assign(o, { x1: a.x, y1: a.y, x2: b.x, y2: b.y }); }
+    else { const q = r(o.x, o.y); o.x = q.x; o.y = q.y; if (kind === 'furn') o.rot = ((o.rot || 0) + 90) % 360; }
+  }
+  commit();
+}
+// Flyttar markerade möbler överst eller underst men behåller deras inbördes ordning.
+function orderMulti(act) {
+  const f = F(), ids = new Set(multiObjs().filter(x => x.kind === 'furn').map(x => x.id));
+  const mine = f.furn.filter(o => ids.has(o.id)), rest = f.furn.filter(o => !ids.has(o.id));
+  f.furn = act === 'toBack' ? mine.concat(rest) : rest.concat(mine); commit();
 }
 
 /* ---------- panel ---------- */
@@ -1249,6 +1423,15 @@ function renderPanel() {
       h += `</div>`;
     }
     h += `</div>`;
+  } else if (sel && sel.kind === 'multi') {
+    const xs = multiObjs(), nF = xs.filter(x => x.kind === 'furn').length, nT = xs.length - nF;
+    const what = [nF ? `${nF} ${nF === 1 ? 'möbel' : 'möbler'}` : '', nT ? `${nT} ${nT === 1 ? 'text/mått' : 'texter/mått'}` : ''].filter(Boolean).join(' och ');
+    h += `<div class="psec"><h3>${sel.g ? '<span class="grouptag">Grupp</span>' : 'Flera markerade'}</h3>
+      <p class="note">${what}. ${sel.g ? 'Klicka på gruppen för att flytta allt tillsammans. Cmd/Ctrl-klick markerar en enskild sak i gruppen.' : 'Shift-klicka för att lägga till eller ta bort. Gruppera så hänger de ihop när du flyttar dem.'}</p>
+      <div class="btns">${sel.g ? '<button class="btn" data-act="ungroup" type="button">Dela upp gruppen</button>' : '<button class="btn pri" data-act="group" type="button">Gruppera</button>'}<button class="btn" data-act="rot90" type="button">Vrid 90°</button><button class="btn" data-act="dup" type="button">Duplicera</button><button class="btn danger" data-act="del" type="button">Ta bort</button></div></div>`;
+    if (nF) h += `<div class="psec"><h3>Ordning</h3><div class="order two"><button class="btn" data-act="toBack" type="button">Underst</button><button class="btn" data-act="toFront" type="button">Överst</button></div><p class="note">Flyttar de markerade möblerna överst eller underst. Deras inbördes ordning behålls.</p></div>`;
+    h += layerSec(xs);
+    if (nF) { const cols = new Set(xs.filter(x => x.kind === 'furn').map(x => x.o.color || '')); h += colorSec(cols.size === 1 ? [...cols][0] : '', nF === xs.length ? 'Färg' : 'Färg på möblerna'); }
   } else if (sel && o) {
     if (sel.kind === 'wall') {
       const I = wInfo(o);
@@ -1273,7 +1456,7 @@ function renderPanel() {
       const idx = f.furn.indexOf(o), n = f.furn.length;
       h += `<div class="psec"><h3>Ordning</h3>
         <div class="order"><button class="btn" data-act="toBack" type="button"${idx === 0 ? ' disabled' : ''}>Underst</button><button class="btn" data-act="down" type="button"${idx === 0 ? ' disabled' : ''}>Ner</button><button class="btn" data-act="up" type="button"${idx === n - 1 ? ' disabled' : ''}>Upp</button><button class="btn" data-act="toFront" type="button"${idx === n - 1 ? ' disabled' : ''}>Överst</button></div>
-        <p class="note">Lager ${idx + 1} av ${n}${idx === n - 1 ? ', ligger överst' : ''}. Lägg t.ex. bordsskivan överst så hamnar stolarna under. Tangenter: Ö överst, Ä ner ett steg (Skift+Ä upp).</p></div>`;
+        <p class="note">Plats ${idx + 1} av ${n}${idx === n - 1 ? ', ligger överst' : ''}. Lägg t.ex. bordsskivan överst så hamnar stolarna under. Tangenter: Ö överst (Skift+Ö underst), Ä ner ett steg (Skift+Ä upp).</p></div>`;
       h += colorSec(o.color, 'Möbelns färg');
     } else if (sel.kind === 'room') {
       const r = computeFaces(f).rooms.find(r => r.rec && r.rec.id === o.id);
@@ -1294,6 +1477,8 @@ function renderPanel() {
       <div class="btns"><button class="btn" data-act="addFloorCopy" type="button">Nytt plan ovanpå</button><button class="btn" data-act="addFloorEmpty" type="button">Tomt plan</button>${P.floors.length > 1 ? `<button class="btn danger${armed === 'delFloor' ? ' armed' : ''}" data-act="delFloor" type="button">${armed === 'delFloor' ? 'Klicka igen för att ta bort' : 'Ta bort plan'}</button>` : ''}</div>
       <p class="note">"Nytt plan ovanpå" kopierar ytterväggarna så du kan rita insidan direkt.</p></div>`;
   }
+  if (tool !== 'furn' && sel && FREE[sel.kind] && o) h += layerSec([{ kind: sel.kind, id: sel.id, o }]);
+  if (tool !== 'furn') h += layersSec();
   // ytor
   const fc = computeFaces(f);
   h += `<div class="psec"><h3>Ytor, ${esc(f.name)}</h3><table class="areas">`;
@@ -1309,6 +1494,44 @@ function renderPanel() {
     <p class="note">Rumsytan mäts innanför väggarna. Det är inte en formell boarea enligt SS 21054 (där räknas t.ex. inte ytor under 1,9 m takhöjd).</p></div>`;
   pn.innerHTML = h;
   pn.querySelectorAll('canvas[data-thumb]').forEach(cnv => drawThumb(cnv, cnv.dataset.thumb));
+}
+function layerSec(xs) {
+  const ls = new Set(xs.map(x => layerOf(x.o).id)), cur = ls.size === 1 ? [...ls][0] : '';
+  const g = xs.length === 1 && xs[0].o.g;
+  return `<div class="psec"><h3>Lager</h3><div class="row"><label for="p_layer">Ligger i</label><select id="p_layer">${cur ? '' : '<option value="" selected>Olika lager</option>'}${P.layers.map(l => `<option value="${l.id}"${l.id === cur ? ' selected' : ''}>${esc(l.name)}</option>`).join('')}</select></div>
+    ${g ? `<p class="note"><span class="grouptag">Grupp</span> Den här saken ingår i en grupp.</p><div class="btns"><button class="btn" data-act="leaveGroup" type="button">Ta ur gruppen</button><button class="btn" data-act="selGroup" type="button">Markera hela gruppen</button></div>` : ''}</div>`;
+}
+const ICON = {
+  eye: '<svg viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
+  eyeOff: '<svg viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 5.1A10 10 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.2 4.1M6.6 6.6C3.8 8.4 2 12 2 12s3.6 7 10 7a9.6 9.6 0 0 0 5.4-1.6"/></svg>',
+  lock: '<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>',
+  unlock: '<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.5-2"/></svg>',
+  x: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+};
+function layersSec() {
+  ensureLayers(P);
+  const cnt = {}; for (const fl of P.floors) for (const k of Object.values(FREE)) for (const o of fl[k] || []) { const id = layerOf(o).id; cnt[id] = (cnt[id] || 0) + 1; }
+  let h = `<div class="psec"><h3>Lager</h3><div class="layers">`;
+  for (const l of [...P.layers].reverse()) {
+    const on = l.id === P.activeLayer, vis = l.visible !== false;
+    h += `<div class="layer${on ? ' on' : ''}${vis ? '' : ' off'}"><button class="dot" type="button" data-lact="active" data-lid="${l.id}" title="Gör till aktivt lager" aria-label="Aktivt lager"></button><input class="lname" type="text" data-lname="${l.id}" value="${esc(l.name)}" aria-label="Lagrets namn"><span class="cnt">${cnt[l.id] || 0}</span><button type="button" data-lact="vis" data-lid="${l.id}" title="${vis ? 'Dölj' : 'Visa'}"${vis ? '' : ' class="dim"'}>${vis ? ICON.eye : ICON.eyeOff}</button><button type="button" data-lact="lock" data-lid="${l.id}" title="${l.locked ? 'Lås upp' : 'Lås'}"${l.locked ? '' : ' class="dim"'}>${l.locked ? ICON.lock : ICON.unlock}</button>${P.layers.length > 1 ? `<button type="button" data-lact="del" data-lid="${l.id}" title="Ta bort lagret">${ICON.x}</button>` : '<span></span>'}</div>`;
+  }
+  h += `</div><div class="btns"><button class="btn" data-act="addLayer" type="button">+ Nytt lager</button></div><p class="note">Möbler, texter och mått hamnar i det aktiva lagret (fylld prick). Dolda lager syns inte i ritningen, bilden eller 3D. Låsta lager syns men går inte att markera.</p></div>`;
+  return h;
+}
+function layerAct(act, id) {
+  const l = P.layers.find(x => x.id === id); if (!l) return;
+  if (act === 'active') P.activeLayer = id;
+  else if (act === 'vis') { l.visible = l.visible === false; if (!l.visible && selObjs().some(x => layerOf(x.o).id === id)) sel = null; }
+  else if (act === 'lock') { l.locked = !l.locked; if (l.locked && selObjs().some(x => layerOf(x.o).id === id)) sel = null; }
+  else if (act === 'del') {
+    if (P.layers.length < 2) return;
+    const to = P.layers.find(x => x.id !== id); let n = 0;
+    for (const fl of P.floors) for (const k of Object.values(FREE)) for (const o of fl[k] || []) if (layerOf(o).id === id) { o.layer = to.id; n++; }
+    P.layers = P.layers.filter(x => x.id !== id); ensureLayers(P);
+    if (n) toast(`${n} saker flyttades till "${to.name}"`);
+  }
+  commit(); renderPanel();
 }
 function colorSec(cur, title) {
   let h = `<div class="psec"><h3>${title}</h3><div class="swatches">`;
@@ -1327,10 +1550,15 @@ function paletteSec() {
   if (!used.size) return `<div class="psec"><h3>Projektets palett</h3><p class="note">Markera ett rum eller en möbel och välj en färg, så samlas projektets färger här.</p></div>`;
   let h = `<div class="psec"><h3>Projektets palett</h3><div class="palette">`;
   for (const [c, names] of used) h += `<button class="chip" type="button" data-color="${c}" title="${esc([...new Set(names)].join(', '))}"><i style="background:${c}"></i>${names.length} st</button>`;
-  h += `</div><p class="note">${sel && (sel.kind === 'furn' || sel.kind === 'room') ? 'Klicka en färg för att ge den till det markerade.' : 'Markera ett rum eller en möbel och klicka en färg för att återanvända den.'}</p></div>`;
+  h += `</div><p class="note">${sel && (sel.kind === 'furn' || sel.kind === 'room' || sel.kind === 'multi') ? 'Klicka en färg för att ge den till det markerade.' : 'Markera ett rum eller en möbel och klicka en färg för att återanvända den.'}</p></div>`;
   return h;
 }
 function setSelColor(c) {
+  if (sel && sel.kind === 'multi') {
+    const fs = multiObjs().filter(x => x.kind === 'furn'); if (!fs.length) return false;
+    for (const { o } of fs) { if (c) o.color = c; else delete o.color; }
+    commit(); return true;
+  }
   const o = findSel(); if (!o || !sel || (sel.kind !== 'furn' && sel.kind !== 'room')) return false;
   if (c) o.color = c; else delete o.color;
   commit(); return true;
@@ -1353,6 +1581,9 @@ function updateLive() {
 }
 $('#panel').addEventListener('change', e => {
   const t = e.target, f = F(), o = findSel(), v = parseNum(t.value);
+  if (t.dataset.lname) { const l = P.layers.find(x => x.id === t.dataset.lname); if (l) { l.name = t.value.trim() || l.name; commit(); } return; }
+  if (t.id === 'p_layer') { if (t.value) { for (const x of selObjs()) x.o.layer = t.value; commit(); } return; }
+  if (t.id === 'p_color' && sel && sel.kind === 'multi') { setSelColor(t.value); return; }
   switch (t.id) {
     case 'p_len': if (v > 10) setWallLength(o, v); break;
     case 'p_t': if (v > 0) o.t = v; break;
@@ -1384,6 +1615,8 @@ $('#panel').addEventListener('change', e => {
 $('#panel').addEventListener('click', e => {
   const lib = e.target.closest('[data-lib]');
   if (lib) { opts.furnKind = lib.dataset.lib; saveOpts(); renderPanel(); renderOptbar(); return; }
+  const la = e.target.closest('[data-lact]');
+  if (la) { layerAct(la.dataset.lact, la.dataset.lid); return; }
   const sw = e.target.closest('[data-color]');
   if (sw) { if (!setSelColor(sw.dataset.color)) toast('Markera ett rum eller en möbel först'); return; }
   const tr = e.target.closest('tr[data-room]');
@@ -1395,6 +1628,14 @@ $('#panel').addEventListener('click', e => {
   }
   const b = e.target.closest('[data-act]'); if (!b) return;
   const f = F(), o = findSel(), act = b.dataset.act;
+  if (act === 'addLayer') { const id = uid(); P.layers.push({ id, name: 'Lager ' + (P.layers.length + 1), visible: true, locked: false }); P.activeLayer = id; commit(); renderPanel(); setTimeout(() => { const i = document.querySelector(`[data-lname="${id}"]`); if (i) { i.focus(); i.select(); } }, 0); return; }
+  if (sel && sel.kind === 'multi') {
+    if (act === 'group') groupSel(); else if (act === 'ungroup') ungroupSel(); else if (act === 'rot90') rotateMulti();
+    else if (act === 'dup') duplicateSel(); else if (act === 'del') deleteSel(); else if (act === 'toFront' || act === 'toBack') orderMulti(act);
+    return;
+  }
+  if (act === 'leaveGroup') { delete o.g; commit(); return; }
+  if (act === 'selGroup') { selectItems([{ kind: sel.kind, id: sel.id }]); return; }
   if (act !== 'delFloor') armed = null;
   switch (act) {
     case 'del': deleteSel(); return;
@@ -1458,7 +1699,7 @@ $('#bSave').onclick = saveFile;
 $('#bOpen').onclick = () => $('#fileIn').click();
 $('#fileIn').onchange = e => {
   const file = e.target.files[0]; if (!file) return;
-  file.text().then(txt => { const d = JSON.parse(txt); if (!d.floors) throw new Error(); P = d; cur = 0; sel = null; undoStack = []; redoStack = []; lastSnap = snapshot(); changed(); renderAll(); fitView(); toast('Öppnade ' + file.name); })
+  file.text().then(txt => { const d = JSON.parse(txt); if (!d.floors) throw new Error(); P = ensureLayers(d); cur = 0; sel = null; undoStack = []; redoStack = []; lastSnap = snapshot(); changed(); renderAll(); fitView(); toast('Öppnade ' + file.name); })
     .catch(() => toast('Filen gick inte att läsa som planritning'));
   e.target.value = '';
 };
@@ -1474,7 +1715,7 @@ function normalizeProject(d) {
     nf.furn.forEach(it => { const k = LIB[it.kind] || LIB.rect; it.w = it.w || k.w; it.d = it.d || k.d; it.h = it.h ?? k.h; it.rot = it.rot || 0; it.label = it.label || k.name; });
     return nf;
   });
-  return d;
+  return ensureLayers(d);
 }
 function loadPasted(txt) {
   let d; try { d = JSON.parse(txt.slice(txt.indexOf('{'), txt.lastIndexOf('}') + 1)); } catch (_) { d = null; }
@@ -1503,7 +1744,7 @@ let newArmed = false;
 $('#bNew').onclick = () => {
   if (!newArmed) { newArmed = true; $('#bNew').textContent = 'Klicka igen för att rensa'; $('#bNew').classList.add('armed'); setTimeout(() => { newArmed = false; $('#bNew').textContent = 'Nytt'; $('#bNew').classList.remove('armed'); }, 3000); return; }
   newArmed = false; $('#bNew').textContent = 'Nytt'; $('#bNew').classList.remove('armed');
-  P = { v: 1, name: 'Nytt hus', floors: [newFloor('Entréplan')] }; cur = 0; sel = null; commit(); renderAll(); view.x = 5000; view.y = 4000; view.s = 0.07; draw();
+  P = ensureLayers({ v: 1, name: 'Nytt hus', floors: [newFloor('Entréplan')] }); cur = 0; sel = null; commit(); renderAll(); view.x = 5000; view.y = 4000; view.s = 0.07; draw();
 };
 $('#bFit').onclick = fitView;
 $('#panelBtn').onclick = () => $('#panel').classList.toggle('closed');
@@ -1622,8 +1863,18 @@ function build3D() {
       }
     }
     if (showFurn) for (const it of f.furn) {
+      if (!isVis(it)) continue;
       const k = LIB[it.kind] || LIB.rect, col = it.color ? mat('c_' + it.color, it.color) : mat('f_' + it.kind, k.col);
       const rot = -(it.rot || 0) * Math.PI / 180;
+      if (it.kind === 'hammock') {
+        const hg = new THREE.Group(), steel = mat('steel', 0x4a4d50), H = (it.h > 0 ? it.h : 950) / 1000, W2 = it.w / 2000, D = it.d / 1000;
+        hg.position.set(it.x / 1000, base / 1000, it.y / 1000); hg.rotation.y = rot;
+        const bx = (gw, gh, gd, x, y, z, m) => { const mm = new THREE.Mesh(new THREE.BoxGeometry(gw, gh, gd), m); mm.position.set(x, y, z); mm.castShadow = mm.receiveShadow = true; hg.add(mm); };
+        bx(it.w / 1000 * 0.97, 0.05, 0.06, 0, 0.025, 0, steel);
+        for (const sgn of [-1, 1]) { bx(0.06, 0.04, D * 0.9, sgn * W2 * 0.97, 0.02, 0, steel); const post = new THREE.Mesh(new THREE.BoxGeometry(0.05, H * 1.15, 0.05), steel); post.position.set(sgn * W2 * 0.8, H * 0.55, 0); post.rotation.z = sgn * 0.35; post.castShadow = true; hg.add(post); }
+        const body = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 12), col); body.scale.set(W2 * 0.62, 0.09, D * 0.42); body.position.set(0, H * 0.5, 0); body.castShadow = body.receiveShadow = true; hg.add(body);
+        grp.add(hg); continue;
+      }
       if (it.kind === 'stairs') {
         const next = P.floors[i + 1], rise = it.h > 0 ? it.h : (next ? f.height + next.slab : f.height), n = Math.max(3, Math.round(rise / 180));
         const sg = new THREE.Group(); sg.position.set(it.x / 1000, base / 1000, it.y / 1000); sg.rotation.y = rot;
@@ -1717,6 +1968,7 @@ function load() {
   try { const o = JSON.parse(localStorage.getItem(STORE + '.opts') || 'null'); if (o) Object.assign(opts, o); } catch (e) { }
   try { const s = localStorage.getItem(STORE); if (s) { const d = JSON.parse(s); if (d && d.floors && d.floors.length) P = d; } } catch (e) { }
   if (!P) P = sampleProject();
+  ensureLayers(P);
   lastSnap = snapshot();
 }
 load();
