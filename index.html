@@ -1375,6 +1375,35 @@ $('#fileIn').onchange = e => {
     .catch(() => toast('Filen gick inte att läsa som planritning'));
   e.target.value = '';
 };
+// Klistra in ett projekt (Cmd/Ctrl+V) och kopiera det aktuella (Cmd/Ctrl+C). Kan ångras med Cmd/Ctrl+Z.
+function normalizeProject(d) {
+  d.v = 1; d.name = d.name || 'Inklistrat hus';
+  d.floors = d.floors.map((f, i) => {
+    const nf = { ...newFloor(f.name || 'Plan ' + (i + 1), f.height || 2500, f.slab ?? 250), ...f };
+    nf.id = nf.id || uid();
+    for (const k of ['walls', 'openings', 'rooms', 'furn', 'dims', 'texts']) nf[k] = (nf[k] || []).map(o => ({ id: uid(), ...o }));
+    nf.walls.forEach(w => { w.t = w.t || 120; w.h = w.h ?? null; });
+    nf.openings.forEach(o => { const win = o.type === 'window'; o.w = o.w || (win ? 1200 : 900); o.h = o.h || (win ? 1200 : 2100); o.sill = o.sill ?? (win ? 900 : 0); o.swing = o.swing || 1; o.hinge = o.hinge || 0; });
+    nf.furn.forEach(it => { const k = LIB[it.kind] || LIB.rect; it.w = it.w || k.w; it.d = it.d || k.d; it.h = it.h ?? k.h; it.rot = it.rot || 0; it.label = it.label || k.name; });
+    return nf;
+  });
+  return d;
+}
+window.addEventListener('paste', e => {
+  const tag = (e.target.tagName || '').toLowerCase();
+  if (tag === 'input' || tag === 'textarea') return;
+  const txt = (e.clipboardData && e.clipboardData.getData('text')) || '';
+  let d; try { d = JSON.parse(txt.slice(txt.indexOf('{'), txt.lastIndexOf('}') + 1)); } catch (_) { toast('Urklippet är inte en planritning'); return; }
+  if (!d || !Array.isArray(d.floors) || !d.floors.length) { toast('Urklippet är inte en planritning'); return; }
+  e.preventDefault(); P = normalizeProject(d); cur = 0; sel = null; commit(); renderAll(); fitView();
+  toast('Planritning inklistrad. Cmd/Ctrl+Z ångrar.');
+});
+window.addEventListener('copy', e => {
+  const tag = (e.target.tagName || '').toLowerCase();
+  if (tag === 'input' || tag === 'textarea' || String(window.getSelection())) return;
+  e.preventDefault(); e.clipboardData.setData('text/plain', JSON.stringify(P));
+  toast('Hela projektet kopierat. Klistra in det i chatten så kan jag jobba vidare.');
+});
 let newArmed = false;
 $('#bNew').onclick = () => {
   if (!newArmed) { newArmed = true; $('#bNew').textContent = 'Klicka igen för att rensa'; $('#bNew').classList.add('armed'); setTimeout(() => { newArmed = false; $('#bNew').textContent = 'Nytt'; $('#bNew').classList.remove('armed'); }, 3000); return; }
