@@ -120,6 +120,7 @@ table.areas tr.sub td{color:var(--muted);border-bottom:0}
       <button id="v3d" type="button">3D</button>
     </div>
     <button class="btn" id="bNew" type="button">Nytt</button>
+    <button class="btn" id="bPaste" type="button">Klistra in</button>
     <button class="btn" id="bOpen" type="button">Öppna</button>
     <button class="btn" id="bSave" type="button">Spara</button>
     <button class="btn" id="bExport" type="button">Bild</button>
@@ -1388,15 +1389,23 @@ function normalizeProject(d) {
   });
   return d;
 }
+function loadPasted(txt) {
+  let d; try { d = JSON.parse(txt.slice(txt.indexOf('{'), txt.lastIndexOf('}') + 1)); } catch (_) { d = null; }
+  if (!d || !Array.isArray(d.floors) || !d.floors.length) { toast('Texten är inte en planritning'); return false; }
+  P = normalizeProject(d); cur = 0; sel = null; commit(); renderAll(); fitView();
+  toast('Planritning inläst. Cmd/Ctrl+Z ångrar.'); return true;
+}
 window.addEventListener('paste', e => {
   const tag = (e.target.tagName || '').toLowerCase();
   if (tag === 'input' || tag === 'textarea') return;
   const txt = (e.clipboardData && e.clipboardData.getData('text')) || '';
-  let d; try { d = JSON.parse(txt.slice(txt.indexOf('{'), txt.lastIndexOf('}') + 1)); } catch (_) { toast('Urklippet är inte en planritning'); return; }
-  if (!d || !Array.isArray(d.floors) || !d.floors.length) { toast('Urklippet är inte en planritning'); return; }
-  e.preventDefault(); P = normalizeProject(d); cur = 0; sel = null; commit(); renderAll(); fitView();
-  toast('Planritning inklistrad. Cmd/Ctrl+Z ångrar.');
+  if (loadPasted(txt)) e.preventDefault();
 });
+$('#bPaste').onclick = () => {
+  showModal('Klistra in planritning', `<p class="note" style="margin-bottom:10px">Klicka i rutan, tryck Cmd+V och sedan Läs in.</p><textarea id="pasteBox" style="width:100%;height:220px;font:12px monospace;border:1px solid var(--line);border-radius:4px;padding:8px"></textarea><div class="btns" style="margin-top:10px"><button class="btn pri" id="pasteGo" type="button">Läs in</button></div>`);
+  $('#pasteBox').focus();
+  $('#pasteGo').onclick = () => { if (loadPasted($('#pasteBox').value)) $('#modal').hidden = true; };
+};
 window.addEventListener('copy', e => {
   const tag = (e.target.tagName || '').toLowerCase();
   if (tag === 'input' || tag === 'textarea' || String(window.getSelection())) return;
