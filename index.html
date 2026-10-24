@@ -311,6 +311,20 @@ const LIB = {
   bath: { name: 'Badkar', w: 1700, d: 750, h: 550, cat: 'Bad', col: 0xffffff },
   washer: { name: 'Tvättmaskin', w: 600, d: 600, h: 850, cat: 'Bad', col: 0xeeeeee },
   hammock: { name: 'Hängmatta', w: 3200, d: 1100, h: 950, cat: 'Utomhus', col: 0xd9c7a3 },
+  // Växter och skulpturer: egna symboler i ritningen och egna former i 3D. Färgen styr bladverket respektive skulpturen.
+  p_pot: { name: 'Krukväxt', w: 500, d: 500, h: 900, cat: 'Växter', col: 0x6f8f5a, plant: true },
+  p_olive: { name: 'Olivträd i kruka', w: 1200, d: 1200, h: 2200, cat: 'Växter', col: 0x8a9a6b, plant: true },
+  p_tree: { name: 'Lövträd', w: 4000, d: 4000, h: 6000, cat: 'Växter', col: 0x5f8a4e, plant: true },
+  p_palm: { name: 'Palm', w: 3000, d: 3000, h: 4000, cat: 'Växter', col: 0x5f8f4a, plant: true },
+  p_cypress: { name: 'Cypress', w: 900, d: 900, h: 4500, cat: 'Växter', col: 0x3f5a3a, plant: true },
+  p_bush: { name: 'Buske', w: 1200, d: 1200, h: 1000, cat: 'Växter', col: 0x557a46, plant: true },
+  p_lav: { name: 'Lavendelrad', w: 2000, d: 500, h: 550, cat: 'Växter', col: 0x8d7bb8, plant: true },
+  s_figure: { name: 'Figur på sockel', w: 600, d: 600, h: 1900, cat: 'Skulpturer', col: 0x8c6a45, sculpt: true },
+  s_bust: { name: 'Byst på pelare', w: 500, d: 500, h: 1700, cat: 'Skulpturer', col: 0xe8e4dc, sculpt: true },
+  s_abstract: { name: 'Abstrakt skulptur', w: 900, d: 900, h: 1500, cat: 'Skulpturer', col: 0xb9bcbe, sculpt: true },
+  s_sphere: { name: 'Klot', w: 700, d: 700, h: 700, cat: 'Skulpturer', col: 0xd9d4c8, sculpt: true },
+  s_urn: { name: 'Urna', w: 600, d: 600, h: 900, cat: 'Skulpturer', col: 0xb5683f, sculpt: true },
+  s_fountain: { name: 'Fontän', w: 2000, d: 2000, h: 1300, cat: 'Skulpturer', col: 0xd9d4c8, sculpt: true },
   // Holzmann-verkstad: ungefärliga fotavtryck för vanliga modeller, ändra måtten efter din maskin.
   m_format: { name: 'Formatsåg', w: 2600, d: 2100, h: 900, cat: 'Verkstad (Holzmann)', col: 0x9aa1a6, machine: true },
   m_tsaw: { name: 'Bordscirkelsåg', w: 1100, d: 800, h: 900, cat: 'Verkstad (Holzmann)', col: 0x9aa1a6, machine: true },
@@ -624,6 +638,17 @@ function drawDimLine(c, a, b, off, n, px, label, size = 170) {
   textAlong(c, label, m, Math.atan2(u.y, u.x), size, DIMC);
 }
 
+// Vågig krona (bladverk sett uppifrån) med n bågar. jit varierar bågarna lite så det ser levande ut.
+function crown(c, rx, ry, n, jit = 0.2) {
+  c.beginPath();
+  for (let i = 0; i <= n; i++) {
+    const a = i / n * Math.PI * 2, x = Math.cos(a) * rx * 0.86, y = Math.sin(a) * ry * 0.86;
+    if (!i) { c.moveTo(x, y); continue; }
+    const m = (i - 0.5) / n * Math.PI * 2, k = 1.12 + jit * 0.15 * Math.sin(i * 2.3);
+    c.quadraticCurveTo(Math.cos(m) * rx * k, Math.sin(m) * ry * k, x, y);
+  }
+  c.closePath(); c.fill(); c.stroke();
+}
 function drawFurn(c, it, px, selected) {
   const k = it.kind, w = it.w, d = it.d, hw = w / 2, hd = d / 2;
   c.save(); c.translate(it.x, it.y); c.rotate((it.rot || 0) * Math.PI / 180);
@@ -696,6 +721,55 @@ function drawFurn(c, it, px, selected) {
       c.restore();
       c.lineWidth = px * 2.4; L(-sx, -sy, -sx, sy); L(sx, -sy, sx, sy);
       break;
+    }
+    case 'p_pot': case 'p_olive': case 'p_tree': case 'p_bush': case 'p_cypress': {
+      // Bladverk sett uppifrån: en vågig krona, grenar och stam.
+      if (!it.color) c.fillStyle = k === 'p_cypress' ? '#d5e0cf' : '#e2ecd7';
+      const n = k === 'p_cypress' ? 9 : k === 'p_pot' ? 8 : 12;
+      crown(c, hw, hd, n);
+      if (k === 'p_bush') { crown(c, hw * 0.62, hd * 0.62, 9, 0.5); }
+      else if (k === 'p_cypress') { crown(c, hw * 0.6, hd * 0.6, 7, 0.3); crown(c, hw * 0.28, hd * 0.28, 5, 0.6); }
+      else {
+        c.save(); c.lineWidth = px * 0.8;
+        for (let i = 0; i < 6; i++) { const a = i * Math.PI / 3 + 0.3; L(0, 0, Math.cos(a) * hw * 0.55, Math.sin(a) * hd * 0.55); }
+        c.restore();
+        if (k === 'p_pot' || k === 'p_olive') { c.save(); c.setLineDash([px * 3, px * 3]); c.fillStyle = 'transparent'; E(0, 0, hw * (k === 'p_pot' ? 0.72 : 0.45), hd * (k === 'p_pot' ? 0.72 : 0.45)); c.restore(); }
+        c.fillStyle = '#3b3f43'; c.beginPath(); c.arc(0, 0, Math.max(px * 2, Math.min(w, d) * 0.03), 0, Math.PI * 2); c.fill();
+      }
+      break;
+    }
+    case 'p_palm': {
+      if (!it.color) c.fillStyle = '#e2ecd7';
+      for (let i = 0; i < 9; i++) {
+        const a = i * Math.PI * 2 / 9; c.save(); c.rotate(a); c.beginPath(); c.moveTo(0, 0);
+        c.quadraticCurveTo(hw * 0.5, -hd * 0.16, hw, 0); c.quadraticCurveTo(hw * 0.5, hd * 0.16, 0, 0); c.fill(); c.stroke();
+        c.lineWidth = px * 0.6; L(0, 0, hw * 0.95, 0); c.restore();
+      }
+      c.fillStyle = '#c4a27c'; E(0, 0, Math.min(w, d) * 0.06, Math.min(w, d) * 0.06); break;
+    }
+    case 'p_lav': {
+      if (!it.color) c.fillStyle = '#e6def2';
+      const n = Math.max(2, Math.round(w / 450)), r = Math.min(w / n / 2, hd);
+      for (let i = 0; i < n; i++) { c.save(); c.translate(-hw + w * (i + 0.5) / n, 0); crown(c, r, hd, 7); c.restore(); }
+      break;
+    }
+    case 's_figure': case 's_bust': {
+      const sz = k === 's_bust' ? 0.62 : 1; R(-hw * sz, -hd * sz, w * sz, d * sz);
+      if (k === 's_figure') { c.save(); c.lineWidth = px * 0.6; L(-hw, -hd, hw, hd); L(hw, -hd, -hw, hd); c.restore(); }
+      E(0, d * 0.02, hw * 0.62, hd * 0.3); E(0, 0, Math.min(w, d) * 0.17, Math.min(w, d) * 0.17); break;
+    }
+    case 's_abstract': {
+      c.save(); c.setLineDash([px * 3, px * 3]); R(-hw * 0.7, -hd * 0.7, w * 0.7, d * 0.7); c.restore();
+      c.lineWidth = px * 2.2; c.beginPath();
+      for (let i = 0; i <= 64; i++) { const t = i / 64 * Math.PI * 2, x = Math.sin(t) * hw * 0.62, y = Math.sin(2 * t) * hd * 0.38; i ? c.lineTo(x, y) : c.moveTo(x, y); }
+      c.stroke(); break;
+    }
+    case 's_sphere': E(0, 0, hw, hd); c.save(); c.lineWidth = px * 0.8; c.beginPath(); c.ellipse(-hw * 0.12, -hd * 0.12, hw * 0.6, hd * 0.6, 0, Math.PI * 0.95, Math.PI * 1.6); c.stroke(); c.restore(); break;
+    case 's_urn': E(0, 0, hw, hd); E(0, 0, hw * 0.72, hd * 0.72); E(0, 0, hw * 0.48, hd * 0.48); break;
+    case 's_fountain': {
+      E(0, 0, hw, hd); c.save(); c.fillStyle = '#dcebf2'; E(0, 0, hw * 0.88, hd * 0.88); c.restore();
+      c.save(); c.setLineDash([px * 3, px * 4]); c.lineWidth = px * 0.7; c.fillStyle = 'transparent'; E(0, 0, hw * 0.66, hd * 0.66); E(0, 0, hw * 0.46, hd * 0.46); c.restore();
+      E(0, 0, hw * 0.27, hd * 0.27); E(0, 0, hw * 0.08, hd * 0.08); break;
     }
     case 'stairs': {
       R(-hw, -hd, w, d); const n = Math.max(2, Math.round(d / 250));
@@ -1969,6 +2043,58 @@ function init3D() {
 function size3D() { if (!G) return; const host = $('#gl'), w = host.clientWidth, h = host.clientHeight; if (!w || !h) return; G.renderer.setSize(w, h); G.camera.aspect = w / h; G.camera.updateProjectionMatrix(); }
 const MAT = {};
 function mat(key, col, extra = {}) { if (!MAT[key]) MAT[key] = new THREE.MeshStandardMaterial({ color: col, roughness: 0.85, ...extra }); return MAT[key]; }
+// 3D-form för växter och skulpturer, byggd i meter runt objektets mittpunkt på golvet.
+function natureModel(it, colM) {
+  const g = new THREE.Group(), k = it.kind, W = it.w / 1000, D = it.d / 1000, H = Math.max(it.h, 50) / 1000, S = Math.min(W, D);
+  const pot = mat('pot', 0xb5683f), bark = mat('bark', 0x6b4f37), stone = mat('stone', 0xd9d4c8), water = mat('water', 0x7fb2c9, { roughness: 0.12, metalness: 0.1 });
+  const add = (geo, m, x = 0, y = 0, z = 0) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.castShadow = o.receiveShadow = true; g.add(o); return o; };
+  const blob = (x, y, z, rx, ry, rz, m = colM) => { const o = add(new THREE.SphereGeometry(1, 18, 12), m, x, y, z); o.scale.set(rx, ry, rz); return o; };
+  const cyl = (rt, rb, h, y, m, seg = 20) => add(new THREE.CylinderGeometry(rt, rb, h, seg), m, 0, y + h / 2, 0);
+  switch (k) {
+    case 'p_pot': cyl(S * 0.36, S * 0.28, H * 0.4, 0, pot); blob(0, H * 0.7, 0, S * 0.45, H * 0.3, S * 0.45); blob(S * 0.16, H * 0.8, S * 0.1, S * 0.28, H * 0.18, S * 0.28); break;
+    case 'p_olive':
+      cyl(S * 0.22, S * 0.17, H * 0.15, 0, pot); cyl(S * 0.03, S * 0.045, H * 0.5, H * 0.15, bark, 8);
+      blob(0, H * 0.74, 0, W * 0.32, H * 0.15, D * 0.32); blob(W * 0.15, H * 0.82, D * 0.08, W * 0.22, H * 0.12, D * 0.22); blob(-W * 0.14, H * 0.8, -D * 0.1, W * 0.22, H * 0.12, D * 0.2); break;
+    case 'p_tree':
+      cyl(S * 0.03, S * 0.05, H * 0.5, 0, bark, 10);
+      blob(0, H * 0.68, 0, W * 0.42, H * 0.3, D * 0.42); blob(W * 0.2, H * 0.6, D * 0.1, W * 0.28, H * 0.2, D * 0.28); blob(-W * 0.18, H * 0.62, -D * 0.15, W * 0.28, H * 0.2, D * 0.26); break;
+    case 'p_palm': {
+      cyl(S * 0.035, S * 0.055, H * 0.84, 0, bark, 10);
+      for (let i = 0; i < 9; i++) {
+        const piv = new THREE.Group(); piv.position.y = H * 0.84; piv.rotation.y = i * Math.PI * 2 / 9; g.add(piv);
+        const tilt = new THREE.Group(); tilt.rotation.z = -0.25 - (i % 3) * 0.12; piv.add(tilt);
+        const len = S * 0.5, fr = new THREE.Mesh(new THREE.BoxGeometry(len, 0.02, S * 0.1), colM); fr.position.x = len / 2; fr.castShadow = true; tilt.add(fr);
+      }
+      blob(0, H * 0.84, 0, S * 0.06, S * 0.06, S * 0.06, bark); break;
+    }
+    case 'p_cypress': cyl(S * 0.06, S * 0.08, H * 0.1, 0, bark, 8); blob(0, H * 0.55, 0, W * 0.5, H * 0.45, D * 0.5); break;
+    case 'p_bush': blob(0, H * 0.5, 0, W * 0.45, H * 0.5, D * 0.45); blob(W * 0.2, H * 0.4, D * 0.15, W * 0.3, H * 0.4, D * 0.3); blob(-W * 0.2, H * 0.42, -D * 0.1, W * 0.3, H * 0.38, D * 0.3); break;
+    case 'p_lav': { const n = Math.max(2, Math.round(W / 0.45)), green = mat('lavleaf', 0x7d8f6a); for (let i = 0; i < n; i++) { const x = -W / 2 + W * (i + 0.5) / n; blob(x, H * 0.3, 0, W / n * 0.5, H * 0.3, D * 0.45, green); blob(x, H * 0.62, 0, W / n * 0.4, H * 0.38, D * 0.36); } break; }
+    case 's_figure':
+      add(new THREE.BoxGeometry(W, H * 0.2, D), stone, 0, H * 0.1, 0);
+      cyl(S * 0.18, S * 0.12, H * 0.52, H * 0.2, colM); blob(0, H * 0.73, 0, S * 0.26, H * 0.035, S * 0.16);
+      blob(0, H * 0.84, 0, S * 0.13, H * 0.075, S * 0.14); break;
+    case 's_bust':
+      add(new THREE.BoxGeometry(W * 0.62, H * 0.6, D * 0.62), stone, 0, H * 0.3, 0);
+      blob(0, H * 0.66, 0, W * 0.44, H * 0.07, D * 0.26); cyl(S * 0.08, S * 0.09, H * 0.08, H * 0.68, colM);
+      blob(0, H * 0.85, 0, S * 0.17, H * 0.11, S * 0.2); break;
+    case 's_abstract': {
+      add(new THREE.BoxGeometry(W * 0.7, H * 0.22, D * 0.7), stone, 0, H * 0.11, 0);
+      const kn = add(new THREE.TorusKnotGeometry(0.3, 0.08, 120, 14), colM, 0, H * 0.22 + H * 0.39, 0);
+      kn.scale.set(S, H * 0.74 / 1.1, S); break;
+    }
+    case 's_sphere': blob(0, H / 2, 0, W / 2, H / 2, D / 2); break;
+    case 's_urn': {
+      const pr = [[0, 0], [0.25, 0], [0.3, 0.05], [0.2, 0.13], [0.3, 0.3], [0.46, 0.55], [0.42, 0.76], [0.28, 0.88], [0.36, 0.96], [0.33, 1]].map(([r, y]) => new THREE.Vector2(r * S, y * H));
+      const m = add(new THREE.LatheGeometry(pr, 32), colM); m.material.side = THREE.DoubleSide; break;
+    }
+    case 's_fountain':
+      cyl(W / 2, W / 2 * 0.96, H * 0.3, 0, colM, 48); add(new THREE.CylinderGeometry(W / 2 * 0.9, W / 2 * 0.9, 0.02, 48), water, 0, H * 0.29, 0);
+      cyl(S * 0.06, S * 0.09, H * 0.5, H * 0.3, colM, 16); cyl(S * 0.25, S * 0.11, H * 0.12, H * 0.78, colM, 32);
+      add(new THREE.CylinderGeometry(S * 0.23, S * 0.23, 0.015, 32), water, 0, H * 0.895, 0); blob(0, H * 0.95, 0, S * 0.05, H * 0.05, S * 0.05, colM); break;
+  }
+  return g;
+}
 function shapeFrom(poly) { const s = new THREE.Shape(); poly.forEach((p, i) => i ? s.lineTo(p.x / 1000, -p.y / 1000) : s.moveTo(p.x / 1000, -p.y / 1000)); s.closePath(); return s; }
 function build3D() {
   if (!init3D()) return;
@@ -2046,6 +2172,7 @@ function build3D() {
         }
         grp.add(sg); continue;
       }
+      if (k.plant || k.sculpt) { const g = natureModel(it, col); g.position.set(it.x / 1000, base / 1000, it.y / 1000); g.rotation.y = rot; grp.add(g); continue; }
       if (!(it.h > 0)) continue;
       let geo;
       if (it.kind === 'rtable' || it.kind === 'circle') { geo = new THREE.CylinderGeometry(0.5, 0.5, 1, 40); }
