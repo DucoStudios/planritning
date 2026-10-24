@@ -144,6 +144,14 @@ table.areas tr.sub td{color:var(--muted);border-bottom:0}
 .mbox{background:var(--paper);border-radius:16px;box-shadow:0 20px 50px rgba(30,25,10,.25);max-width:1100px;width:100%;max-height:100%;overflow:auto;padding:18px 20px;display:flex;flex-direction:column;gap:12px}
 .mhead{display:flex;align-items:center;gap:10px}
 .mhead h2{margin:0;font-size:18px;font-weight:800;flex:1}
+.prow{display:flex;align-items:center;gap:8px;padding:10px 12px;border:2px solid var(--line);border-radius:12px;background:#fff}
+.prow.cur{border-color:var(--accent);background:var(--accent-soft)}
+.pinfo{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}
+.pinfo b{font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pinfo span{font-size:12px;color:var(--muted)}
+#plib{display:flex;flex-direction:column;gap:8px}
+.pfoot{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.pnote,.pempty{margin:0;font-size:13px;color:var(--muted)}
 .gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
 .gallery figure{margin:0;display:flex;flex-direction:column;gap:6px}
 .gallery img{width:100%;border:2px solid var(--line);border-radius:12px;background:#fff}
@@ -439,10 +447,12 @@ function undo() { if (!undoStack.length) return; redoStack.push(lastSnap); lastS
 function redo() { if (!redoStack.length) return; undoStack.push(lastSnap); lastSnap = redoStack.pop(); P = JSON.parse(lastSnap); afterLoad(); }
 function afterLoad() { ensureLayers(P); cur = clamp(cur, 0, P.floors.length - 1); sel = null; changed(); renderAll(); }
 let saveT = 0;
+function flushSave() { clearTimeout(saveT); try { localStorage.setItem(STORE, snapshot()); } catch (e) { } if (P.pid && readLib().some(x => x.id === P.pid)) storeProject(true); }
+window.addEventListener('pagehide', flushSave);
 function changed() {
   VER++;
   clearTimeout(saveT);
-  saveT = setTimeout(() => { try { localStorage.setItem(STORE, snapshot()); } catch (e) { } }, 400);
+  saveT = setTimeout(flushSave, 400);
   draw();
 }
 
@@ -1374,7 +1384,7 @@ window.addEventListener('keydown', e => {
   if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
   if (mod && e.key.toLowerCase() === 'd') { e.preventDefault(); duplicateSel(); return; }
   if (mod && e.key.toLowerCase() === 'g') { e.preventDefault(); e.shiftKey ? ungroupSel() : groupSel(); return; }
-  if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); saveFile(); return; }
+  if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); saveLocal(); return; }
   if (e.key === ' ') { spaceDown = true; cv.className = 'pan'; e.preventDefault(); return; }
   if (e.key === 'Escape') { if (T[tool].cancel) T[tool].cancel(); if (tool !== 'select') setTool('select'); else select(null); return; }
   if (e.key === 'Delete' || e.key === 'Backspace') { if (tool === 'select' && sel) { e.preventDefault(); deleteSel(); } return; }
@@ -1727,19 +1737,51 @@ function download(name, href) { const a = document.createElement('a'); a.href = 
 const safeName = () => (P.name || 'planritning').replace(/[^\wåäöÅÄÖ\- ]+/g, '').trim().replace(/\s+/g, '-') || 'planritning';
 function saveFile() {
   const blob = new Blob([JSON.stringify(P, null, 1)], { type: 'application/json' });
-  download(safeName() + '.json', URL.createObjectURL(blob)); toast('Sparat som fil. Projektet sparas även automatiskt i webbläsaren.');
+  download(safeName() + '.json', URL.createObjectURL(blob)); toast('Exporterat som fil');
 }
-$('#bSave').onclick = saveFile;
-$('#bOpen').onclick = () => $('#fileIn').click();
+// Projektbibliotek i webbläsaren: alla sparade projekt under LIBKEY, P.pid pekar ut vilket som är öppet.
+const LIBKEY = STORE + '.projects';
+function readLib() { try { const l = JSON.parse(localStorage.getItem(LIBKEY) || '[]'); return Array.isArray(l) ? l : []; } catch (e) { return []; } }
+function writeLib(l) { try { localStorage.setItem(LIBKEY, JSON.stringify(l)); return true; } catch (e) { return false; } }
+function storeProject(quiet) {
+  if (!P.pid) P.pid = uid();
+  const l = readLib().filter(x => x.id !== P.pid);
+  l.unshift({ id: P.pid, name: P.name || 'Namnlöst hus', updated: Date.now(), floors: P.floors.length, data: snapshot() });
+  const ok = writeLib(l);
+  if (!quiet) toast(ok ? `Sparat lokalt: ${P.name}` : 'Kunde inte spara, webbläsarens lagring är full eller blockerad');
+  return ok;
+}
+function saveLocal() { storeProject(false); try { localStorage.setItem(STORE, snapshot()); } catch (e) { } if (!$('#modal').hidden && $('#plib')) openLib(); }
+function saveAsNew() { delete P.pid; P.name = (P.name || 'Namnlöst hus') + ' (kopia)'; $('#pname').value = P.name; saveLocal(); }
+function loadProject(d) { P = ensureLayers(d); cur = 0; sel = null; undoStack = []; redoStack = []; lastSnap = snapshot(); changed(); flushSave(); renderAll(); fitView(); }
+const fmtDate = t => new Date(t).toLocaleString('sv-SE', { dateStyle: 'short', timeStyle: 'short' });
+function openLib() {
+  const l = readLib();
+  const rows = l.length ? l.map(x => `<div class="prow${x.id === P.pid ? ' cur' : ''}" data-pid="${x.id}"><div class="pinfo"><b>${esc(x.name)}</b><span>${x.floors} plan · sparad ${fmtDate(x.updated)}${x.id === P.pid ? ' · öppet nu' : ''}</span></div><button class="btn" type="button" data-act="open">Öppna</button><button class="btn" type="button" data-act="del">Ta bort</button></div>`).join('')
+    : '<p class="pempty">Inga sparade projekt än. Tryck Spara så hamnar det aktuella projektet här.</p>';
+  showModal('Sparade projekt', `<div id="plib">${rows}</div><div class="pfoot"><button class="btn pri" type="button" id="pSave">Spara aktuellt</button><button class="btn" type="button" id="pSaveNew">Spara som nytt</button><span style="flex:1"></span><button class="btn" type="button" id="pImport">Importera fil</button><button class="btn" type="button" id="pExport">Exportera fil</button></div><p class="pnote">Projekten sparas lokalt i den här webbläsaren. Exportera en fil om du vill flytta ett projekt till en annan dator.</p>`);
+  $('#pSave').onclick = saveLocal; $('#pSaveNew').onclick = saveAsNew;
+  $('#pImport').onclick = () => $('#fileIn').click(); $('#pExport').onclick = saveFile;
+  $('#plib').onclick = e => {
+    const b = e.target.closest('[data-act]'); if (!b) return; const id = b.closest('[data-pid]').dataset.pid, x = readLib().find(p => p.id === id); if (!x) return;
+    if (b.dataset.act === 'open') { if (P.pid) storeProject(true); try { loadProject(JSON.parse(x.data)); } catch (_) { toast('Projektet gick inte att läsa'); return; } $('#modal').hidden = true; toast('Öppnade ' + x.name); }
+    else if (b.dataset.act === 'del') {
+      if (b.dataset.armed) { writeLib(readLib().filter(p => p.id !== id)); if (P.pid === id) delete P.pid; openLib(); toast('Tog bort ' + x.name); }
+      else { b.dataset.armed = 1; b.textContent = 'Säker?'; b.classList.add('armed'); }
+    }
+  };
+}
+$('#bSave').onclick = saveLocal;
+$('#bOpen').onclick = openLib;
 $('#fileIn').onchange = e => {
   const file = e.target.files[0]; if (!file) return;
-  file.text().then(txt => { const d = JSON.parse(txt); if (!d.floors) throw new Error(); P = ensureLayers(d); cur = 0; sel = null; undoStack = []; redoStack = []; lastSnap = snapshot(); changed(); renderAll(); fitView(); toast('Öppnade ' + file.name); })
+  file.text().then(txt => { const d = JSON.parse(txt); if (!d.floors) throw new Error(); delete d.pid; $('#modal').hidden = true; P = ensureLayers(d); cur = 0; sel = null; undoStack = []; redoStack = []; lastSnap = snapshot(); changed(); renderAll(); fitView(); toast('Öppnade ' + file.name); })
     .catch(() => toast('Filen gick inte att läsa som planritning'));
   e.target.value = '';
 };
 // Klistra in ett projekt (Cmd/Ctrl+V) och kopiera det aktuella (Cmd/Ctrl+C). Kan ångras med Cmd/Ctrl+Z.
 function normalizeProject(d) {
-  d.v = 1; d.name = d.name || 'Inklistrat hus';
+  d.v = 1; d.name = d.name || 'Inklistrat hus'; delete d.pid;
   d.floors = d.floors.map((f, i) => {
     const nf = { ...newFloor(f.name || 'Plan ' + (i + 1), f.height || 2500, f.slab ?? 250), ...f };
     nf.id = nf.id || uid();
@@ -1778,6 +1820,7 @@ let newArmed = false;
 $('#bNew').onclick = () => {
   if (!newArmed) { newArmed = true; $('#bNew').textContent = 'Klicka igen för att rensa'; $('#bNew').classList.add('armed'); setTimeout(() => { newArmed = false; $('#bNew').textContent = 'Nytt'; $('#bNew').classList.remove('armed'); }, 3000); return; }
   newArmed = false; $('#bNew').textContent = 'Nytt'; $('#bNew').classList.remove('armed');
+  if (P.pid) storeProject(true);
   P = ensureLayers({ v: 1, name: 'Nytt hus', floors: [newFloor('Entréplan')] }); cur = 0; sel = null; commit(); renderAll(); view.x = 5000; view.y = 4000; view.s = 0.07; draw();
 };
 $('#bFit').onclick = fitView;
