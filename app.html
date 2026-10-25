@@ -310,6 +310,9 @@ const LIB = {
   bath: { name: 'Badkar', w: 1700, d: 750, h: 550, cat: 'Bad', col: 0xffffff },
   washer: { name: 'Tvättmaskin', w: 600, d: 600, h: 850, cat: 'Bad', col: 0xeeeeee },
   hammock: { name: 'Hängmatta', w: 3200, d: 1100, h: 950, cat: 'Utomhus', col: 0xd9c7a3 },
+  bike: { name: 'Cykel', w: 1800, d: 600, h: 1100, cat: 'Utomhus', col: 0x2f5f86, model: true },
+  // Thule Chariot Cross 2 Double, uppfälld i barnvagnsläge (ungefärliga mått från återförsäljare).
+  thule: { name: 'Thule dubbelvagn', w: 1210, d: 800, h: 1120, cat: 'Utomhus', col: 0x4a5560, model: true },
   // Växter och skulpturer: egna symboler i ritningen och egna former i 3D. Färgen styr bladverket respektive skulpturen.
   p_pot: { name: 'Krukväxt', w: 500, d: 500, h: 900, cat: 'Växter', col: 0x6f8f5a, plant: true },
   p_olive: { name: 'Olivträd i kruka', w: 1200, d: 1200, h: 2200, cat: 'Växter', col: 0x8a9a6b, plant: true },
@@ -769,6 +772,25 @@ function drawFurn(c, it, px, selected) {
       E(0, 0, hw, hd); c.save(); c.fillStyle = '#dcebf2'; E(0, 0, hw * 0.88, hd * 0.88); c.restore();
       c.save(); c.setLineDash([px * 3, px * 4]); c.lineWidth = px * 0.7; c.fillStyle = 'transparent'; E(0, 0, hw * 0.66, hd * 0.66); E(0, 0, hw * 0.46, hd * 0.46); c.restore();
       E(0, 0, hw * 0.27, hd * 0.27); E(0, 0, hw * 0.08, hd * 0.08); break;
+    }
+    case 'bike': {
+      // Sett uppifrån: två smala hjul, ram, sadel och styre tvärs över.
+      const wl = Math.min(700, w * 0.39), wt = Math.max(35, d * 0.07);
+      c.save(); c.fillStyle = '#3b3f43'; R(-hw, -wt / 2, wl, wt); R(hw - wl, -wt / 2, wl, wt); c.restore();
+      c.lineWidth = px * 2.4; L(-hw + wl / 2, 0, hw - wl / 2, 0); L(hw - wl * 0.62, -hd, hw - wl * 0.62, hd); c.lineWidth = px;
+      RR(-w * 0.17, -45, 260, 90, 40); break;
+    }
+    case 'thule': {
+      // Sett uppifrån: framhjul, kropp med sufflett, stora bakhjul på sidorna och styre baktill.
+      const ww = Math.max(50, d * 0.08), wl = Math.min(500, w * 0.4);
+      c.save(); c.fillStyle = '#3b3f43';
+      R(w * 0.02, -hd, wl, ww); R(w * 0.02, hd - ww, wl, ww);
+      E(-hw + 70, -hd * 0.45, 45, 25); E(-hw + 70, hd * 0.45, 45, 25); c.restore();
+      RR(-hw + 110, -hd + ww + 10, w * 0.72, d - 2 * ww - 20, 140);
+      c.save(); c.fillStyle = dark ? it.color : '#e8ecee'; RR(-hw + 200, -hd + ww + 60, w * 0.45, d - 2 * ww - 120, 110); c.restore();
+      c.lineWidth = px * 2.4; L(hw - 70, -hd * 0.7, hw - 70, hd * 0.7); c.lineWidth = px;
+      L(-hw + 110 + w * 0.72, -hd * 0.6, hw - 70, -hd * 0.62); L(-hw + 110 + w * 0.72, hd * 0.6, hw - 70, hd * 0.62);
+      break;
     }
     case 'stairs': {
       R(-hw, -hd, w, d); const n = Math.max(2, Math.round(d / 250));
@@ -2087,6 +2109,30 @@ function natureModel(it, colM) {
       const pr = [[0, 0], [0.25, 0], [0.3, 0.05], [0.2, 0.13], [0.3, 0.3], [0.46, 0.55], [0.42, 0.76], [0.28, 0.88], [0.36, 0.96], [0.33, 1]].map(([r, y]) => new THREE.Vector2(r * S, y * H));
       const m = add(new THREE.LatheGeometry(pr, 32), colM); m.material.side = THREE.DoubleSide; break;
     }
+    case 'bike': case 'thule': {
+      // Byggs i nominella mått och skalas sedan till objektets mått.
+      const tyre = mat('tyre', 0x222222), V = (x, y, z = 0) => new THREE.Vector3(x, y, z);
+      const rod = (a, b, r, m) => { const dir = b.clone().sub(a), o = add(new THREE.CylinderGeometry(r, r, dir.length(), 8), m); o.position.copy(a.clone().add(b).multiplyScalar(0.5)); o.quaternion.setFromUnitVectors(V(0, 1), dir.normalize()); return o; };
+      const wheel = (x, y, z, R, t) => add(new THREE.TorusGeometry(R, t, 8, 32), tyre, x, y, z);
+      if (k === 'bike') {
+        const rh = V(-0.55, 0.35), fh = V(0.55, 0.35), bb = V(-0.05, 0.3), st = V(-0.2, 0.82), ht = V(0.4, 0.86), hb = V(0.45, 0.68), stem = V(0.38, 0.98);
+        wheel(rh.x, rh.y, 0, 0.33, 0.02); wheel(fh.x, fh.y, 0, 0.33, 0.02);
+        for (const [a, b] of [[rh, bb], [bb, st], [st, rh], [st, ht], [bb, hb], [hb, fh], [hb, stem]]) rod(a, b, 0.017, colM);
+        rod(V(0.36, 0.98, -0.3), V(0.36, 0.98, 0.3), 0.012, tyre); add(new THREE.BoxGeometry(0.24, 0.05, 0.12), tyre, -0.22, 0.87, 0);
+        g.scale.set(W / 1.8, H / 1.1, D / 0.6);
+      } else {
+        const mesh = mat('thulemesh', 0xa9b2b8), alu = mat('alu', 0xc8ccce);
+        // Kroppen: sidoprofil (fram åt -x) som extruderas över bredden, med fönster av nät på sidorna.
+        const prof = (k2, dx = 0, dy = 0) => { const sh = new THREE.Shape(); sh.moveTo(-0.42 * k2 + dx, 0.24 + dy); sh.lineTo(0.3 * k2 + dx, 0.24 + dy); sh.lineTo(0.33 * k2 + dx, 0.88 * k2 + dy); sh.quadraticCurveTo(0.2 * k2 + dx, 1.02 * k2 + dy, -0.12 * k2 + dx, 0.98 * k2 + dy); sh.quadraticCurveTo(-0.5 * k2 + dx, 0.9 * k2 + dy, -0.42 * k2 + dx, 0.24 + dy); return sh; };
+        const body = add(new THREE.ExtrudeGeometry(prof(1), { depth: 0.6, bevelEnabled: true, bevelSize: 0.04, bevelThickness: 0.04, bevelSegments: 3, curveSegments: 16 }), colM, 0, 0, -0.3);
+        for (const z of [-1, 1]) { const w2 = add(new THREE.ShapeGeometry(prof(0.62, -0.05, 0.3), 16), mesh, 0, 0, z * 0.345); if (z < 0) w2.rotation.y = Math.PI, w2.position.x = -0.1; }
+        wheel(0.12, 0.25, 0.37, 0.24, 0.03); wheel(0.12, 0.25, -0.37, 0.24, 0.03);
+        for (const z of [-0.25, 0.25]) { wheel(-0.52, 0.08, z, 0.07, 0.02); rod(V(-0.4, 0.3, z), V(-0.52, 0.1, z), 0.012, alu); rod(V(0.3, 0.55, z), V(0.56, 1.06, z), 0.014, alu); }
+        rod(V(0.56, 1.06, -0.3), V(0.56, 1.06, 0.3), 0.016, tyre);
+        g.scale.set(W / 1.21, H / 1.12, D / 0.8);
+      }
+      break;
+    }
     case 's_fountain':
       cyl(W / 2, W / 2 * 0.96, H * 0.3, 0, colM, 48); add(new THREE.CylinderGeometry(W / 2 * 0.9, W / 2 * 0.9, 0.02, 48), water, 0, H * 0.29, 0);
       cyl(S * 0.06, S * 0.09, H * 0.5, H * 0.3, colM, 16); cyl(S * 0.25, S * 0.11, H * 0.12, H * 0.78, colM, 32);
@@ -2171,7 +2217,7 @@ function build3D() {
         }
         grp.add(sg); continue;
       }
-      if (k.plant || k.sculpt) { const g = natureModel(it, col); g.position.set(it.x / 1000, base / 1000, it.y / 1000); g.rotation.y = rot; grp.add(g); continue; }
+      if (k.plant || k.sculpt || k.model) { const g = natureModel(it, col); g.position.set(it.x / 1000, base / 1000, it.y / 1000); g.rotation.y = rot; grp.add(g); continue; }
       if (!(it.h > 0)) continue;
       let geo;
       if (it.kind === 'rtable' || it.kind === 'circle') { geo = new THREE.CylinderGeometry(0.5, 0.5, 1, 40); }
